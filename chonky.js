@@ -137,8 +137,8 @@
     return `${pad(d.getDate())}${pad(d.getMonth() + 1)}${d.getFullYear()}`;
   }
 
-  // Cập nhật giá trị vào ô input có mask của AngularJS
-  function setAngularInput(el, val) {
+  // Cập nhật giá trị vào ô input (tương thích cả Angular lẫn input thông thường)
+  function setInputValue(el, val) {
     if (!el) return;
     el.focus();
     el.value = val;
@@ -161,30 +161,45 @@
     const tuNgayRaw = formatDate(firstDate);
     const denNgayRaw = formatDate(lastDate);
 
-    // Tìm ô Từ ngày & Đến ngày theo đúng cấu trúc của trang dịch vụ công
-    const tuNgayInput = document.querySelector('#field5, [name="field5"], input[ng-model*="field5"]');
-    const denNgayInput = document.querySelector('#field6, [name="field6"], input[ng-model*="field6"]');
-    const btnSearch = document.getElementById('btnSearchAdvanced');
+    // Kiểm tra mốc trước tháng 07/2025
+    const isBeforeJul2025 = (year < 2025) || (year === 2025 && month < 7);
+
+    let tuNgayInput, denNgayInput, btnSearch;
+
+    if (isBeforeJul2025) {
+      // Trước 07/2025: Dùng giao diện tra cứu cũ/tdt
+      tuNgayInput = document.getElementById('tuNgay_tdt');
+      denNgayInput = document.getElementById('denNgay_tdt');
+      btnSearch = document.getElementById('btnSearch_tdt');
+    } else {
+      // Từ 07/2025 trở đi: Dùng giao diện dịch vụ công mới
+      tuNgayInput = document.querySelector('#field5, [name="field5"], input[ng-model*="field5"]');
+      denNgayInput = document.querySelector('#field6, [name="field6"], input[ng-model*="field6"]');
+      btnSearch = document.getElementById('btnSearchAdvanced');
+    }
 
     if (!tuNgayInput || !denNgayInput) {
-      statusMsg.textContent = 'Lỗi: Không tìm thấy ô nhập Từ ngày / Đến ngày!';
+      const mode = isBeforeJul2025 ? 'Trước 07/2025 (#tuNgay_tdt)' : 'Từ 07/2025 (#field5)';
+      statusMsg.textContent = `Lỗi: Không tìm thấy ô ngày cho kỳ [${mode}]!`;
       statusMsg.style.color = '#dc2626';
       return;
     }
 
     // Điền dữ liệu
-    setAngularInput(tuNgayInput, tuNgayRaw);
-    setAngularInput(denNgayInput, denNgayRaw);
+    setInputValue(tuNgayInput, tuNgayRaw);
+    setInputValue(denNgayInput, denNgayRaw);
 
-    statusMsg.textContent = `Đã điền: ${tuNgayRaw} - ${denNgayRaw}`;
+    statusMsg.textContent = `Đã điền (${isBeforeJul2025 ? 'tdt' : 'mới'}): ${tuNgayRaw} - ${denNgayRaw}`;
     statusMsg.style.color = '#16a34a';
 
-    // Nhấn tìm kiếm sau một nhịp chờ ngắn để Angular đồng bộ model
+    // Nhấn tìm kiếm sau một nhịp chờ ngắn để form/Angular đồng bộ model
     setTimeout(() => {
       if (btnSearch) {
         btnSearch.click();
+      } else {
+        console.warn('Không tìm thấy nút tìm kiếm tương ứng!');
       }
-    }, 200);
+    }, 250);
   }
 
   function renderGrid() {
