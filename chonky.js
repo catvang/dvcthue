@@ -118,7 +118,6 @@
 
   document.body.appendChild(toolbar);
 
-  // Xử lý logic thời gian và kích hoạt form
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -133,71 +132,91 @@
     return String(n).padStart(2, '0');
   }
 
-  function formatDate(d) {
+  // Định dạng DDMMYYYY cho giao diện dịch vụ công mới (có input-mask)
+  function formatDateRaw(d) {
     return `${pad(d.getDate())}${pad(d.getMonth() + 1)}${d.getFullYear()}`;
   }
 
-  // Cập nhật giá trị vào ô input (tương thích cả Angular lẫn input thông thường)
+  // Định dạng DD/MM/YYYY cho giao diện tdt cũ (trước 07/2025)
+  function formatDateSlash(d) {
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  }
+
+  // Cập nhật giá trị vào ô input an toàn, không bị datepicker ghi đè lệch
   function setInputValue(el, val) {
     if (!el) return;
+    
+    // Gỡ bỏ tạm ràng buộc range của trang nếu có
+    el.removeAttribute('data-max-range');
+
     el.focus();
     el.value = val;
+    el.setAttribute('value', val);
+
+    // Kích hoạt sự kiện để web nhận diện giá trị mới
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // Nếu trang dùng jQuery, chỉ trigger change chứ KHÔNG dùng .datepicker('setDate')
+    if (window.jQuery) {
+      window.jQuery(el).val(val).trigger('change');
+    }
+
     el.blur();
   }
 
   function executeSearch(month, year) {
-    const firstDate = new Date(year, month - 1, 1);
-    let lastDate;
+    // 1. Ngày đầu tháng: luôn là ngày 01
+    const firstDateStr = `01/${pad(month)}/${year}`;
+    const firstDateRaw = `01${pad(month)}${year}`;
 
-    // Nếu chọn đúng năm và tháng hiện tại -> ngày cuối là ngày hôm nay
+    // 2. Ngày cuối tháng: lấy số ngày thực tế của tháng đó (Tháng 2/2025 -> 28)
+    const daysInMonth = new Date(year, month, 0).getDate();
+    let lastDateStr, lastDateRaw;
+
     if (year === currentYear && month === currentMonth) {
-      lastDate = now;
+      // Nếu là tháng hiện tại -> lấy tới ngày hôm nay
+      lastDateStr = formatDateSlash(now);
+      lastDateRaw = formatDateRaw(now);
     } else {
-      lastDate = new Date(year, month, 0);
+      lastDateStr = `${pad(daysInMonth)}/${pad(month)}/${year}`;
+      lastDateRaw = `${pad(daysInMonth)}${pad(month)}${year}`;
     }
 
-    const tuNgayRaw = formatDate(firstDate);
-    const denNgayRaw = formatDate(lastDate);
-
-    // Kiểm tra mốc trước tháng 07/2025
     const isBeforeJul2025 = (year < 2025) || (year === 2025 && month < 7);
 
-    let tuNgayInput, denNgayInput, btnSearch;
+    let tuNgayInput, denNgayInput, btnSearch, tuNgayVal, denNgayVal;
 
     if (isBeforeJul2025) {
-      // Trước 07/2025: Dùng giao diện tra cứu cũ/tdt
+      tuNgayVal = firstDateStr;       // 01/02/2025
+      denNgayVal = lastDateStr;       // 28/02/2025
       tuNgayInput = document.getElementById('tuNgay_tdt');
       denNgayInput = document.getElementById('denNgay_tdt');
       btnSearch = document.getElementById('btnSearch_tdt');
     } else {
-      // Từ 07/2025 trở đi: Dùng giao diện dịch vụ công mới
+      tuNgayVal = firstDateRaw;
+      denNgayVal = lastDateRaw;
       tuNgayInput = document.querySelector('#field5, [name="field5"], input[ng-model*="field5"]');
       denNgayInput = document.querySelector('#field6, [name="field6"], input[ng-model*="field6"]');
       btnSearch = document.getElementById('btnSearchAdvanced');
     }
 
     if (!tuNgayInput || !denNgayInput) {
-      const mode = isBeforeJul2025 ? 'Trước 07/2025 (#tuNgay_tdt)' : 'Từ 07/2025 (#field5)';
-      statusMsg.textContent = `Lỗi: Không tìm thấy ô ngày cho kỳ [${mode}]!`;
+      statusMsg.textContent = 'Lỗi: Không tìm thấy ô nhập ngày!';
       statusMsg.style.color = '#dc2626';
       return;
     }
 
-    // Điền dữ liệu
-    setInputValue(tuNgayInput, tuNgayRaw);
-    setInputValue(denNgayInput, denNgayRaw);
+    // Điền ô Đến ngày TRƯỚC, Từ ngày SAU (tránh event của Từ ngày kích hoạt tự nhảy Đến ngày)
+    setInputValue(denNgayInput, denNgayVal);
+    setInputValue(tuNgayInput, tuNgayVal);
 
-    statusMsg.textContent = `Đã điền (${isBeforeJul2025 ? 'tdt' : 'mới'}): ${tuNgayRaw} - ${denNgayRaw}`;
+    statusMsg.textContent = `Đã điền: ${tuNgayVal} - ${denNgayVal}`;
     statusMsg.style.color = '#16a34a';
 
-    // Nhấn tìm kiếm sau một nhịp chờ ngắn để form/Angular đồng bộ model
     setTimeout(() => {
       if (btnSearch) {
         btnSearch.click();
-      } else {
-        console.warn('Không tìm thấy nút tìm kiếm tương ứng!');
       }
     }, 250);
   }
@@ -211,14 +230,12 @@
       btn.className = 't-btn-month';
       btn.textContent = `T${pad(m)}`;
 
-      // 1. Làm mờ các tháng tương lai nếu năm chọn là năm hiện tại
       if (selectedYear === currentYear && m > currentMonth) {
         btn.disabled = true;
       } else if (selectedYear > currentYear) {
         btn.disabled = true;
       }
 
-      // Đánh dấu tháng hiện tại
       if (selectedYear === currentYear && m === currentMonth) {
         btn.classList.add('active-curr');
       }
